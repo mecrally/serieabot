@@ -1,15 +1,3 @@
-"""
-Bot Telegram per i risultati della Serie A.
-
-Fonte principale:
-- football-data.org -> risultati ufficiali della stagione corrente
-
-Fonte secondaria gratuita:
-- TheSportsDB -> tentativo di recuperare i marcatori
-
-Il bot gira tramite GitHub Actions.
-"""
-
 import html
 import json
 import os
@@ -20,10 +8,12 @@ import requests
 
 
 # ============================================================
-# CONFIGURAZIONE
+# SECRETS / CONFIGURAZIONE
 # ============================================================
 
 FOOTBALL_DATA_TOKEN = os.environ["FOOTBALL_DATA_TOKEN"]
+FOOTBALLDATA_IO_KEY = os.getenv("FOOTBALLDATA_IO_KEY", "")
+
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
@@ -31,236 +21,216 @@ TEST_LAST_FINISHED = (
     os.getenv("TEST_LAST_FINISHED", "false").lower() == "true"
 )
 
+TEST_JUVE_EUROPA = (
+    os.getenv("TEST_JUVE_EUROPA", "false").lower() == "true"
+)
+
+TEST_JUVE_COPPA = (
+    os.getenv("TEST_JUVE_COPPA", "false").lower() == "true"
+)
+
 NOTIFIED_FILE = "notified.json"
 
+
+# ============================================================
+# API
+# ============================================================
+
+# Serie A
 FOOTBALL_DATA_BASE = "https://api.football-data.org/v4"
-SERIE_A_CODE = "SA"
 
 FOOTBALL_DATA_HEADERS = {
     "X-Auth-Token": FOOTBALL_DATA_TOKEN,
 }
 
-# TheSportsDB
-# La documentazione pubblica usa la chiave free "123".
+# Europa League
+FDIO_BASE = "https://footballdata.io/api/v1"
+
+FDIO_HEADERS = {
+    "Authorization": f"Bearer {FOOTBALLDATA_IO_KEY}",
+}
+
+# Coppa Italia
 SPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/123"
 
-# ID Italian Serie A su TheSportsDB
-SPORTSDB_SERIE_A_ID = "4332"
+# ID Coppa Italia su TheSportsDB
+COPPA_ITALIA_ID = "4506"
 
 
 # ============================================================
-# NOMI CORTI E COLORI SQUADRE
+# NOMI CORTI + COLORI
 # ============================================================
 
-TEAMS = [
-    {
-        "short": "Inter",
-        "colors": "⚫🔵",
-        "aliases": [
-            "fc internazionale milano",
-            "internazionale",
-            "inter milan",
-            "inter",
-        ],
-    },
-    {
-        "short": "Milan",
-        "colors": "🔴⚫",
-        "aliases": [
-            "ac milan",
-            "milan",
-        ],
-    },
-    {
-        "short": "Atalanta",
-        "colors": "🔵⚫",
-        "aliases": [
-            "atalanta bc",
-            "atalanta",
-        ],
-    },
-    {
-        "short": "Bologna",
-        "colors": "🔴🔵",
-        "aliases": [
-            "bologna fc 1909",
-            "bologna fc",
-            "bologna",
-        ],
-    },
-    {
-        "short": "Cagliari",
-        "colors": "🔴🔵",
-        "aliases": [
-            "cagliari calcio",
-            "cagliari",
-        ],
-    },
-    {
-        "short": "Como",
-        "colors": "🔵⚪",
-        "aliases": [
-            "como 1907",
-            "como",
-        ],
-    },
-    {
-        "short": "Fiorentina",
-        "colors": "🟣⚪",
-        "aliases": [
-            "acf fiorentina",
-            "fiorentina",
-        ],
-    },
-    {
-        "short": "Frosinone",
-        "colors": "🟡🔵",
-        "aliases": [
-            "frosinone calcio",
-            "frosinone",
-        ],
-    },
-    {
-        "short": "Genoa",
-        "colors": "🔴🔵",
-        "aliases": [
-            "genoa cfc",
-            "genoa",
-        ],
-    },
-    {
-        "short": "Juventus",
-        "colors": "⚪⚫",
-        "aliases": [
-            "juventus fc",
-            "juventus",
-        ],
-    },
-    {
-        "short": "Lazio",
-        "colors": "🔵⚪",
-        "aliases": [
-            "ss lazio",
-            "lazio",
-        ],
-    },
-    {
-        "short": "Lecce",
-        "colors": "🟡🔴",
-        "aliases": [
-            "us lecce",
-            "lecce",
-        ],
-    },
-    {
-        "short": "Monza",
-        "colors": "🔴⚪",
-        "aliases": [
-            "ac monza",
-            "monza",
-        ],
-    },
-    {
-        "short": "Napoli",
-        "colors": "🔵⚪",
-        "aliases": [
-            "ssc napoli",
-            "napoli",
-        ],
-    },
-    {
-        "short": "Parma",
-        "colors": "🟡🔵",
-        "aliases": [
-            "parma calcio 1913",
-            "parma calcio",
-            "parma",
-        ],
-    },
-    {
-        "short": "Roma",
-        "colors": "🟡🔴",
-        "aliases": [
-            "as roma",
-            "roma",
-        ],
-    },
-    {
-        "short": "Sassuolo",
-        "colors": "🟢⚫",
-        "aliases": [
-            "us sassuolo calcio",
-            "sassuolo calcio",
-            "sassuolo",
-        ],
-    },
-    {
-        "short": "Torino",
-        "colors": "🟤⚪",
-        "aliases": [
-            "torino fc",
-            "torino",
-        ],
-    },
-    {
-        "short": "Udinese",
-        "colors": "⚪⚫",
-        "aliases": [
-            "udinese calcio",
-            "udinese",
-        ],
-    },
-    {
-        "short": "Venezia",
-        "colors": "🟠🟢",
-        "aliases": [
-            "venezia fc",
-            "venezia",
-        ],
-    },
-]
+TEAM_MAP = {
+
+    "atalanta": ("Atalanta", "🔵⚫"),
+    "atalanta bc": ("Atalanta", "🔵⚫"),
+
+    "bologna": ("Bologna", "🔴🔵"),
+    "bologna fc 1909": ("Bologna", "🔴🔵"),
+
+    "cagliari": ("Cagliari", "🔴🔵"),
+    "cagliari calcio": ("Cagliari", "🔴🔵"),
+
+    "como": ("Como", "🔵⚪"),
+    "como 1907": ("Como", "🔵⚪"),
+
+    "fiorentina": ("Fiorentina", "🟣⚪"),
+    "acf fiorentina": ("Fiorentina", "🟣⚪"),
+
+    "frosinone": ("Frosinone", "🟡🔵"),
+    "frosinone calcio": ("Frosinone", "🟡🔵"),
+
+    "genoa": ("Genoa", "🔴🔵"),
+    "genoa cfc": ("Genoa", "🔴🔵"),
+
+    "inter": ("Inter", "⚫🔵"),
+    "inter milan": ("Inter", "⚫🔵"),
+    "internazionale": ("Inter", "⚫🔵"),
+    "fc internazionale milano": ("Inter", "⚫🔵"),
+
+    "juventus": ("Juventus", "⚪⚫"),
+    "juventus fc": ("Juventus", "⚪⚫"),
+
+    "lazio": ("Lazio", "🔵⚪"),
+    "ss lazio": ("Lazio", "🔵⚪"),
+
+    "lecce": ("Lecce", "🟡🔴"),
+    "us lecce": ("Lecce", "🟡🔴"),
+
+    "milan": ("Milan", "🔴⚫"),
+    "ac milan": ("Milan", "🔴⚫"),
+
+    "monza": ("Monza", "🔴⚪"),
+    "ac monza": ("Monza", "🔴⚪"),
+
+    "napoli": ("Napoli", "🔵⚪"),
+    "ssc napoli": ("Napoli", "🔵⚪"),
+
+    "parma": ("Parma", "🟡🔵"),
+    "parma calcio": ("Parma", "🟡🔵"),
+    "parma calcio 1913": ("Parma", "🟡🔵"),
+
+    "roma": ("Roma", "🟡🔴"),
+    "as roma": ("Roma", "🟡🔴"),
+
+    "sassuolo": ("Sassuolo", "🟢⚫"),
+    "sassuolo calcio": ("Sassuolo", "🟢⚫"),
+    "us sassuolo calcio": ("Sassuolo", "🟢⚫"),
+
+    "torino": ("Torino", "🟤⚪"),
+    "torino fc": ("Torino", "🟤⚪"),
+
+    "udinese": ("Udinese", "⚪⚫"),
+    "udinese calcio": ("Udinese", "⚪⚫"),
+
+    "venezia": ("Venezia", "🟠🟢"),
+    "venezia fc": ("Venezia", "🟠🟢"),
+
+    # Alcune possibili avversarie europee.
+    # Se una squadra non è qui, comparirà semplicemente ⚽.
+
+    "olympique de marseille": ("Marseille", "🔵⚪"),
+    "marseille": ("Marseille", "🔵⚪"),
+
+    "bayer leverkusen": ("Leverkusen", "🔴⚫"),
+    "bayer 04 leverkusen": ("Leverkusen", "🔴⚫"),
+
+    "real sociedad": ("Real Sociedad", "🔵⚪"),
+
+    "rennes": ("Rennes", "🔴⚫"),
+    "stade rennais": ("Rennes", "🔴⚫"),
+
+    "celta": ("Celta", "🔵⚪"),
+    "celta vigo": ("Celta", "🔵⚪"),
+
+    "crystal palace": ("Crystal Palace", "🔴🔵"),
+
+    "bournemouth": ("Bournemouth", "🔴⚫"),
+    "afc bournemouth": ("Bournemouth", "🔴⚫"),
+
+    "sunderland": ("Sunderland", "🔴⚪"),
+
+    "hoffenheim": ("Hoffenheim", "🔵⚪"),
+
+    "az": ("AZ", "🔴⚪"),
+    "az alkmaar": ("AZ", "🔴⚪"),
+
+    "benfica": ("Benfica", "🔴⚪"),
+    "sl benfica": ("Benfica", "🔴⚪"),
+
+    "anderlecht": ("Anderlecht", "🟣⚪"),
+
+    "salzburg": ("Salzburg", "🔴⚪"),
+    "red bull salzburg": ("Salzburg", "🔴⚪"),
+
+    "besiktas": ("Beşiktaş", "⚫⚪"),
+
+    "ferencvaros": ("Ferencváros", "🟢⚪"),
+}
 
 
-def normalize_name(name: str) -> str:
-    """Normalizza un nome per confrontarlo più facilmente."""
+def normalize_name(value: str) -> str:
 
-    name = (name or "").lower()
+    value = (value or "").lower()
 
-    name = re.sub(r"[^a-z0-9à-ÿ ]", " ", name)
+    replacements = {
+        "à": "a",
+        "á": "a",
+        "ä": "a",
+        "è": "e",
+        "é": "e",
+        "ë": "e",
+        "ì": "i",
+        "í": "i",
+        "ò": "o",
+        "ó": "o",
+        "ö": "o",
+        "ù": "u",
+        "ú": "u",
+        "ü": "u",
+        "ş": "s",
+        "š": "s",
+        "ć": "c",
+        "č": "c",
+        "ž": "z",
+    }
 
-    return " ".join(name.split())
+    for old, new in replacements.items():
+        value = value.replace(old, new)
+
+    value = re.sub(
+        r"[^a-z0-9 ]",
+        " ",
+        value,
+    )
+
+    return " ".join(
+        value.split()
+    )
+
+
+NORMALIZED_TEAM_MAP = {
+    normalize_name(name): info
+    for name, info in TEAM_MAP.items()
+}
 
 
 def get_team_info(name: str) -> tuple[str, str]:
-    """
-    Restituisce:
-    (nome corto, colori)
-    """
 
     normalized = normalize_name(name)
 
-    for team in TEAMS:
-        for alias in team["aliases"]:
-            if normalize_name(alias) == normalized:
-                return team["short"], team["colors"]
+    if normalized in NORMALIZED_TEAM_MAP:
+        return NORMALIZED_TEAM_MAP[normalized]
 
-    # Secondo tentativo più permissivo.
-    for team in TEAMS:
-        for alias in team["aliases"]:
-            alias_normalized = normalize_name(alias)
-
-            if alias_normalized in normalized:
-                return team["short"], team["colors"]
-
-    # Fallback
     return name, "⚽"
 
 
-def same_team(name1: str, name2: str) -> bool:
-    short1, _ = get_team_info(name1)
-    short2, _ = get_team_info(name2)
+def is_juventus(name: str) -> bool:
 
-    return normalize_name(short1) == normalize_name(short2)
+    short_name, _ = get_team_info(name)
+
+    return short_name == "Juventus"
 
 
 # ============================================================
@@ -268,461 +238,36 @@ def same_team(name1: str, name2: str) -> bool:
 # ============================================================
 
 def load_notified() -> set:
-    if os.path.exists(NOTIFIED_FILE):
-        with open(NOTIFIED_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
 
-    return set()
+    if not os.path.exists(NOTIFIED_FILE):
+        return set()
+
+    with open(
+        NOTIFIED_FILE,
+        "r",
+        encoding="utf-8",
+    ) as file:
+
+        return {
+            str(item)
+            for item in json.load(file)
+        }
 
 
 def save_notified(notified: set) -> None:
-    with open(NOTIFIED_FILE, "w", encoding="utf-8") as f:
-        json.dump(sorted(notified), f, indent=2)
 
+    with open(
+        NOTIFIED_FILE,
+        "w",
+        encoding="utf-8",
+    ) as file:
 
-# ============================================================
-# FOOTBALL-DATA.ORG
-# ============================================================
-
-def get_finished_matches() -> list:
-    """
-    Recupera tutte le partite FINISHED della stagione corrente.
-    Serve anche per il test dell'ultima partita.
-    """
-
-    response = requests.get(
-        f"{FOOTBALL_DATA_BASE}/competitions/{SERIE_A_CODE}/matches",
-        headers=FOOTBALL_DATA_HEADERS,
-        params={
-            "status": "FINISHED",
-        },
-        timeout=20,
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    return data.get("matches", [])
-
-
-def get_todays_finished_matches() -> list:
-    """
-    Nel funzionamento normale controlliamo soltanto
-    le partite concluse oggi.
-    """
-
-    today = datetime.now(timezone.utc).date().isoformat()
-
-    response = requests.get(
-        f"{FOOTBALL_DATA_BASE}/competitions/{SERIE_A_CODE}/matches",
-        headers=FOOTBALL_DATA_HEADERS,
-        params={
-            "status": "FINISHED",
-            "dateFrom": today,
-            "dateTo": today,
-        },
-        timeout=20,
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    return data.get("matches", [])
-
-
-def get_latest_finished_match():
-    matches = get_finished_matches()
-
-    if not matches:
-        return None
-
-    return max(
-        matches,
-        key=lambda match: match["utcDate"],
-    )
-
-
-# ============================================================
-# THESPORTSDB - MARCATORI GRATIS
-# ============================================================
-
-def find_sportsdb_event(match: dict):
-    """
-    Cerca su TheSportsDB la stessa partita recuperata
-    da football-data.org.
-    """
-
-    full_home = match["homeTeam"]["name"]
-    full_away = match["awayTeam"]["name"]
-
-    home, _ = get_team_info(full_home)
-    away, _ = get_team_info(full_away)
-
-    date_event = match["utcDate"][:10]
-
-    # Prima proviamo la ricerca diretta per nome.
-    searches = [
-        f"{home}_vs_{away}",
-        f"{full_home}_vs_{full_away}",
-    ]
-
-    for event_name in searches:
-        try:
-            response = requests.get(
-                f"{SPORTSDB_BASE}/searchevents.php",
-                params={
-                    "e": event_name,
-                    "d": date_event,
-                },
-                timeout=15,
-            )
-
-            response.raise_for_status()
-
-            data = response.json()
-
-            events = (
-                data.get("event")
-                or data.get("events")
-                or []
-            )
-
-            for event in events:
-                if str(event.get("idLeague")) != SPORTSDB_SERIE_A_ID:
-                    continue
-
-                event_home = event.get("strHomeTeam", "")
-                event_away = event.get("strAwayTeam", "")
-
-                if (
-                    same_team(event_home, home)
-                    and same_team(event_away, away)
-                ):
-                    return event
-
-        except (requests.RequestException, ValueError):
-            pass
-
-    # Fallback: cerchiamo le partite di Serie A di quel giorno.
-    try:
-        response = requests.get(
-            f"{SPORTSDB_BASE}/eventsday.php",
-            params={
-                "d": date_event,
-                "l": SPORTSDB_SERIE_A_ID,
-            },
-            timeout=15,
+        json.dump(
+            sorted(notified),
+            file,
+            indent=2,
+            ensure_ascii=False,
         )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        events = data.get("events") or []
-
-        for event in events:
-            event_home = event.get("strHomeTeam", "")
-            event_away = event.get("strAwayTeam", "")
-
-            if (
-                same_team(event_home, home)
-                and same_team(event_away, away)
-            ):
-                return event
-
-    except (requests.RequestException, ValueError):
-        pass
-
-    return None
-
-
-def get_sportsdb_timeline(event_id: str) -> list:
-    """Scarica la timeline della partita."""
-
-    try:
-        response = requests.get(
-            f"{SPORTSDB_BASE}/lookuptimeline.php",
-            params={
-                "id": event_id,
-            },
-            timeout=15,
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        return data.get("timeline") or []
-
-    except (requests.RequestException, ValueError):
-        return []
-
-
-def player_short_name(player: str) -> str:
-    """
-    Davide Frattesi -> Frattesi
-    Giovanni Di Lorenzo -> Di Lorenzo
-    Kevin De Bruyne -> De Bruyne
-    """
-
-    if not player:
-        return "Marcatore"
-
-    parts = player.strip().split()
-
-    if len(parts) <= 1:
-        return player
-
-    prefixes = {
-        "de",
-        "di",
-        "da",
-        "del",
-        "della",
-        "van",
-        "von",
-        "der",
-        "la",
-        "le",
-        "lo",
-        "dos",
-        "do",
-    }
-
-    if len(parts) >= 2 and parts[-2].lower() in prefixes:
-        return " ".join(parts[-2:])
-
-    return parts[-1]
-
-
-def minute_sort_value(value: str) -> int:
-    """Serve solo per ordinare cronologicamente i gol."""
-
-    if value is None:
-        return 999
-
-    match = re.search(r"\d+", str(value))
-
-    if not match:
-        return 999
-
-    return int(match.group())
-
-
-def get_goal_scorers(match: dict) -> list:
-    """
-    Cerca i marcatori su TheSportsDB.
-
-    IMPORTANTE:
-    nel piano gratuito la timeline può essere limitata.
-
-    Mostriamo i marcatori soltanto se il numero di gol
-    recuperato coincide con il risultato finale.
-    In questo modo non mostriamo mai una lista incompleta.
-    """
-
-    score = match.get("score", {}).get("fullTime", {})
-
-    home_score = score.get("home")
-    away_score = score.get("away")
-
-    if home_score is None or away_score is None:
-        return []
-
-    expected_goals = home_score + away_score
-
-    if expected_goals == 0:
-        return []
-
-    event = find_sportsdb_event(match)
-
-    if not event:
-        return []
-
-    event_id = event.get("idEvent")
-
-    if not event_id:
-        return []
-
-    timeline = get_sportsdb_timeline(event_id)
-
-    home_name = match["homeTeam"]["name"]
-    away_name = match["awayTeam"]["name"]
-
-    _, home_colors = get_team_info(home_name)
-    _, away_colors = get_team_info(away_name)
-
-    goals = []
-
-    for item in timeline:
-
-        timeline_type = str(
-            item.get("strTimeline", "")
-        ).lower()
-
-        detail = str(
-            item.get("strTimelineDetail", "")
-        )
-
-        # Di solito TheSportsDB usa strTimeline = Goal.
-        if (
-            timeline_type != "goal"
-            and "goal" not in detail.lower()
-        ):
-            continue
-
-        player = item.get("strPlayer")
-
-        if not player:
-            continue
-
-        minute = str(
-            item.get("intTime") or ""
-        ).strip()
-
-        str_home = str(
-            item.get("strHome", "")
-        ).lower()
-
-        if str_home == "yes":
-            colors = home_colors
-
-        elif str_home == "no":
-            colors = away_colors
-
-        else:
-            _, colors = get_team_info(
-                item.get("strTeam", "")
-            )
-
-        tag = ""
-
-        detail_lower = detail.lower()
-
-        if "penalty" in detail_lower:
-            tag = " rig."
-
-        elif "own goal" in detail_lower:
-            tag = " aut."
-
-        goals.append(
-            {
-                "minute": minute,
-                "player": player_short_name(player),
-                "colors": colors,
-                "tag": tag,
-            }
-        )
-
-    goals.sort(
-        key=lambda goal: minute_sort_value(
-            goal["minute"]
-        )
-    )
-
-    # Se TheSportsDB ci ha dato solo parte dei gol,
-    # non mostriamo una lista incompleta.
-    if len(goals) != expected_goals:
-        return []
-
-    return goals
-
-
-# ============================================================
-# FORMATTAZIONE TELEGRAM
-# ============================================================
-
-def format_minute(minute: str) -> str:
-    if not minute:
-        return ""
-
-    minute = str(minute).strip()
-
-    if minute.endswith("'"):
-        return minute
-
-    return f"{minute}'"
-
-
-def format_match_message(
-    match: dict,
-    goals: list,
-    test: bool = False,
-) -> str:
-
-    full_home = match["homeTeam"]["name"]
-    full_away = match["awayTeam"]["name"]
-
-    home, home_colors = get_team_info(full_home)
-    away, away_colors = get_team_info(full_away)
-
-    score = match.get("score", {}).get(
-        "fullTime",
-        {},
-    )
-
-    home_score = score.get("home")
-    away_score = score.get("away")
-
-    matchday = match.get("matchday")
-
-    home = html.escape(str(home))
-    away = html.escape(str(away))
-
-    lines = []
-
-    if test:
-        lines.extend(
-            [
-                "🧪 <b>TEST • STAGIONE ATTUALE</b>",
-                "",
-            ]
-        )
-
-    lines.extend(
-        [
-            "⚽️ <b>SERIE A</b>",
-            "",
-            (
-                f"{home_colors} "
-                f"<b>{home}-{away} "
-                f"{home_score}-{away_score}</b> "
-                f"{away_colors}"
-            ),
-        ]
-    )
-
-    if goals:
-        lines.append("")
-
-        for goal in goals:
-
-            minute = format_minute(
-                goal["minute"]
-            )
-
-            player = html.escape(
-                goal["player"]
-            )
-
-            tag = goal["tag"]
-
-            lines.append(
-                f"{goal['colors']} "
-                f"{minute} {player}{tag}"
-            )
-
-    if matchday:
-        lines.extend(
-            [
-                "",
-                f"📅 Giornata {matchday}",
-            ]
-        )
-
-    return "\n".join(lines)
 
 
 # ============================================================
@@ -740,6 +285,7 @@ def send_telegram_message(text: str) -> None:
             "chat_id": TELEGRAM_CHAT_ID,
             "text": text,
             "parse_mode": "HTML",
+            "disable_web_page_preview": True,
         },
         timeout=20,
     )
@@ -747,89 +293,881 @@ def send_telegram_message(text: str) -> None:
     response.raise_for_status()
 
 
-# ============================================================
-# TEST
-# ============================================================
+def format_result(
+    title: str,
+    home_name: str,
+    away_name: str,
+    home_score,
+    away_score,
+    detail: str = None,
+    attribution: str = None,
+) -> str:
 
-def run_last_match_test() -> None:
-    """
-    Test completo:
-
-    football-data.org
-        ↓
-    ultima partita Serie A
-        ↓
-    TheSportsDB (marcatori se disponibili)
-        ↓
-    Telegram
-    """
-
-    match = get_latest_finished_match()
-
-    if match is None:
-        send_telegram_message(
-            "🧪 <b>TEST SERIE A</b>\n\n"
-            "✅ API collegata correttamente.\n"
-            "Nessuna partita conclusa trovata."
-        )
-        return
-
-    goals = get_goal_scorers(match)
-
-    message = format_match_message(
-        match,
-        goals,
-        test=True,
+    home, home_colors = get_team_info(
+        home_name
     )
 
-    send_telegram_message(message)
+    away, away_colors = get_team_info(
+        away_name
+    )
+
+    lines = [
+        title,
+        "",
+        (
+            f"{home_colors} "
+            f"<b>{html.escape(home)}-"
+            f"{html.escape(away)} "
+            f"{home_score}-{away_score}</b> "
+            f"{away_colors}"
+        ),
+    ]
+
+    if detail:
+        lines.extend(
+            [
+                "",
+                html.escape(detail),
+            ]
+        )
+
+    if attribution:
+        lines.extend(
+            [
+                "",
+                f"<i>{html.escape(attribution)}</i>",
+            ]
+        )
+
+    return "\n".join(lines)
 
 
 # ============================================================
-# BOT NORMALE
+# SERIE A
+# football-data.org
 # ============================================================
 
-def main() -> None:
+def get_serie_a_finished_matches(
+    date_string=None,
+) -> list:
 
-    # TEST MANUALE
-    if TEST_LAST_FINISHED:
-        run_last_match_test()
-        return
+    params = {
+        "status": "FINISHED",
+    }
 
-    notified = load_notified()
+    if date_string:
 
-    # Nel funzionamento normale ci interessano
-    # soltanto le partite concluse oggi.
-    matches = get_todays_finished_matches()
+        params["dateFrom"] = date_string
+        params["dateTo"] = date_string
+
+    response = requests.get(
+        (
+            f"{FOOTBALL_DATA_BASE}/"
+            "competitions/SA/matches"
+        ),
+        headers=FOOTBALL_DATA_HEADERS,
+        params=params,
+        timeout=20,
+    )
+
+    response.raise_for_status()
+
+    return response.json().get(
+        "matches",
+        [],
+    )
+
+
+def notify_serie_a(
+    notified: set,
+) -> bool:
+
+    today = (
+        datetime.now(timezone.utc)
+        .date()
+        .isoformat()
+    )
+
+    matches = get_serie_a_finished_matches(
+        today
+    )
 
     matches.sort(
-        key=lambda match: match["utcDate"]
+        key=lambda match: match.get(
+            "utcDate",
+            "",
+        )
     )
 
     changed = False
 
     for match in matches:
 
-        match_id = match["id"]
-
-        if match_id in notified:
-            continue
-
-        goals = get_goal_scorers(match)
-
-        message = format_match_message(
-            match,
-            goals,
+        # Manteniamo il vecchio formato dell'ID
+        # per non rimandare partite già notificate.
+        key = str(
+            match["id"]
         )
 
-        send_telegram_message(message)
+        if key in notified:
+            continue
 
-        notified.add(match_id)
+        score = (
+            match
+            .get("score", {})
+            .get("fullTime", {})
+        )
+
+        home_score = score.get("home")
+        away_score = score.get("away")
+
+        if (
+            home_score is None
+            or away_score is None
+        ):
+            continue
+
+        detail = None
+
+        if match.get("matchday"):
+
+            detail = (
+                f"📅 Giornata "
+                f"{match['matchday']}"
+            )
+
+        message = format_result(
+            "⚽️ <b>SERIE A</b>",
+            match["homeTeam"]["name"],
+            match["awayTeam"]["name"],
+            home_score,
+            away_score,
+            detail,
+        )
+
+        send_telegram_message(
+            message
+        )
+
+        notified.add(key)
 
         changed = True
 
+    return changed
+
+
+def test_last_serie_a() -> None:
+
+    matches = (
+        get_serie_a_finished_matches()
+    )
+
+    if not matches:
+
+        send_telegram_message(
+            "🧪 <b>TEST SERIE A</b>\n\n"
+            "✅ API collegata.\n"
+            "Nessuna partita conclusa trovata."
+        )
+
+        return
+
+    match = max(
+        matches,
+        key=lambda item: item.get(
+            "utcDate",
+            "",
+        ),
+    )
+
+    score = (
+        match
+        .get("score", {})
+        .get("fullTime", {})
+    )
+
+    detail = None
+
+    if match.get("matchday"):
+
+        detail = (
+            f"📅 Giornata "
+            f"{match['matchday']}"
+        )
+
+    send_telegram_message(
+        format_result(
+            "🧪 <b>TEST • SERIE A</b>",
+            match["homeTeam"]["name"],
+            match["awayTeam"]["name"],
+            score.get("home"),
+            score.get("away"),
+            detail,
+        )
+    )
+
+
+# ============================================================
+# JUVENTUS EUROPA LEAGUE
+# Footballdata.io
+# ============================================================
+
+def extract_footballdata_matches(
+    payload: dict,
+) -> list:
+
+    data = payload.get(
+        "data",
+        [],
+    )
+
+    if isinstance(data, list):
+        return data
+
+    if isinstance(data, dict):
+
+        for key in (
+            "matches",
+            "fixtures",
+            "results",
+        ):
+
+            value = data.get(key)
+
+            if isinstance(value, list):
+                return value
+
+    return []
+
+
+def footballdata_team_name(
+    team,
+) -> str:
+
+    if isinstance(team, dict):
+
+        return (
+            team.get("team_name")
+            or team.get("name")
+            or ""
+        )
+
+    return str(team or "")
+
+
+def is_europa_league(
+    match: dict,
+) -> bool:
+
+    league = match.get(
+        "league",
+        {},
+    )
+
+    if isinstance(league, dict):
+
+        text = " ".join(
+            str(
+                league.get(key, "")
+            )
+            for key in (
+                "name",
+                "competition_name",
+                "league_name",
+            )
+        )
+
+    else:
+        text = str(league)
+
+    text = normalize_name(text)
+
+    return (
+        "europa league" in text
+        and "conference" not in text
+    )
+
+
+def get_juventus_europa_results(
+    date_string: str,
+) -> list:
+
+    if not FOOTBALLDATA_IO_KEY:
+
+        raise RuntimeError(
+            "Manca FOOTBALLDATA_IO_KEY"
+        )
+
+    response = requests.get(
+        (
+            f"{FDIO_BASE}/"
+            "fixtures/results"
+        ),
+        headers=FDIO_HEADERS,
+        params={
+            "date": date_string,
+            "limit": 100,
+        },
+        timeout=20,
+    )
+
+    response.raise_for_status()
+
+    matches = []
+
+    for match in extract_footballdata_matches(
+        response.json()
+    ):
+
+        home = (
+            footballdata_team_name(
+                match.get("home_team")
+            )
+        )
+
+        away = (
+            footballdata_team_name(
+                match.get("away_team")
+            )
+        )
+
+        if not is_europa_league(
+            match
+        ):
+            continue
+
+        if not (
+            is_juventus(home)
+            or is_juventus(away)
+        ):
+            continue
+
+        matches.append(
+            match
+        )
+
+    return matches
+
+
+def notify_juventus_europa(
+    notified: set,
+    force=False,
+) -> bool:
+
+    # Europa League si gioca normalmente
+    # in settimana.
+    #
+    # Limitiamo le chiamate automatiche a
+    # martedì, mercoledì e giovedì.
+    #
+    # Con il workflow ogni 15 minuti questo
+    # ci mantiene comodamente sotto la quota
+    # gratuita mensile.
+
+    weekday = (
+        datetime
+        .now(timezone.utc)
+        .weekday()
+    )
+
+    # lun=0, mar=1, mer=2, gio=3
+
+    if (
+        not force
+        and weekday not in {1, 2, 3}
+    ):
+        return False
+
+    today = (
+        datetime.now(timezone.utc)
+        .date()
+        .isoformat()
+    )
+
+    matches = (
+        get_juventus_europa_results(
+            today
+        )
+    )
+
+    if force and not matches:
+
+        send_telegram_message(
+            "🧪 <b>TEST • EUROPA LEAGUE JUVENTUS</b>\n\n"
+            "✅ Footballdata.io collegato.\n"
+            "Nessun risultato Juventus "
+            "di Europa League trovato oggi.\n\n"
+            "<i>Dati: Footballdata.io</i>"
+        )
+
+        return False
+
+    changed = False
+
+    for match in matches:
+
+        match_id = (
+            match.get("match_id")
+            or match.get("id")
+        )
+
+        if match_id is None:
+            continue
+
+        key = (
+            f"uel:{match_id}"
+        )
+
+        if key in notified:
+            continue
+
+        home = (
+            footballdata_team_name(
+                match.get("home_team")
+            )
+        )
+
+        away = (
+            footballdata_team_name(
+                match.get("away_team")
+            )
+        )
+
+        score = (
+            match.get("score")
+            or {}
+        )
+
+        home_score = score.get(
+            "home"
+        )
+
+        away_score = score.get(
+            "away"
+        )
+
+        if (
+            home_score is None
+            or away_score is None
+        ):
+            continue
+
+        round_name = (
+            match.get("round")
+            or match.get("game_week")
+        )
+
+        detail = None
+
+        if round_name:
+
+            detail = (
+                f"📅 {round_name}"
+            )
+
+        message = format_result(
+            "🏆 <b>EUROPA LEAGUE</b>",
+            home,
+            away,
+            home_score,
+            away_score,
+            detail,
+            "Dati: Footballdata.io",
+        )
+
+        send_telegram_message(
+            message
+        )
+
+        notified.add(key)
+
+        changed = True
+
+    return changed
+
+
+# ============================================================
+# JUVENTUS COPPA ITALIA
+# TheSportsDB gratuito
+# ============================================================
+
+def sportsdb_event_finished(
+    event: dict,
+) -> bool:
+
+    status = normalize_name(
+        str(
+            event.get(
+                "strStatus",
+                "",
+            )
+        )
+    )
+
+    return status in {
+        "ft",
+        "finished",
+        "match finished",
+        "aet",
+        "pen",
+        "after extra time",
+        "after penalties",
+    }
+
+
+def is_juventus_coppa_event(
+    event: dict,
+) -> bool:
+
+    if str(
+        event.get(
+            "idLeague",
+            "",
+        )
+    ) != COPPA_ITALIA_ID:
+
+        return False
+
+    home = event.get(
+        "strHomeTeam",
+        "",
+    )
+
+    away = event.get(
+        "strAwayTeam",
+        "",
+    )
+
+    return (
+        is_juventus(home)
+        or is_juventus(away)
+    )
+
+
+def get_juventus_coppa_events(
+    date_string: str,
+) -> list:
+
+    found = {}
+
+
+    # ----------------------------------------
+    # Tentativo 1:
+    # ricerca evento Juventus nella data
+    # ----------------------------------------
+
+    try:
+
+        response = requests.get(
+            (
+                f"{SPORTSDB_BASE}/"
+                "searchevents.php"
+            ),
+            params={
+                "e": "Juventus",
+                "d": date_string,
+            },
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        events = (
+            data.get("event")
+            or data.get("events")
+            or []
+        )
+
+        for event in events:
+
+            if is_juventus_coppa_event(
+                event
+            ):
+
+                event_id = str(
+                    event.get(
+                        "idEvent",
+                        "",
+                    )
+                )
+
+                found[event_id] = (
+                    event
+                )
+
+    except (
+        requests.RequestException,
+        ValueError,
+    ):
+        pass
+
+
+    # ----------------------------------------
+    # Tentativo 2:
+    # partite Coppa Italia del giorno
+    # ----------------------------------------
+
+    try:
+
+        response = requests.get(
+            (
+                f"{SPORTSDB_BASE}/"
+                "eventsday.php"
+            ),
+            params={
+                "d": date_string,
+                "l": COPPA_ITALIA_ID,
+            },
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+        events = (
+            response
+            .json()
+            .get("events")
+            or []
+        )
+
+        for event in events:
+
+            if is_juventus_coppa_event(
+                event
+            ):
+
+                event_id = str(
+                    event.get(
+                        "idEvent",
+                        "",
+                    )
+                )
+
+                found[event_id] = (
+                    event
+                )
+
+    except (
+        requests.RequestException,
+        ValueError,
+    ):
+        pass
+
+
+    return list(
+        found.values()
+    )
+
+
+def notify_juventus_coppa(
+    notified: set,
+    force=False,
+) -> bool:
+
+    today = (
+        datetime.now(timezone.utc)
+        .date()
+        .isoformat()
+    )
+
+    events = (
+        get_juventus_coppa_events(
+            today
+        )
+    )
+
+    finished_events = [
+        event
+        for event in events
+        if sportsdb_event_finished(
+            event
+        )
+    ]
+
+
+    if (
+        force
+        and not finished_events
+    ):
+
+        send_telegram_message(
+            "🧪 <b>TEST • COPPA ITALIA JUVENTUS</b>\n\n"
+            "✅ TheSportsDB raggiungibile.\n"
+            "Nessuna partita Juventus "
+            "di Coppa Italia conclusa trovata oggi."
+        )
+
+        return False
+
+
+    changed = False
+
+
+    for event in finished_events:
+
+        event_id = event.get(
+            "idEvent"
+        )
+
+        if not event_id:
+            continue
+
+
+        key = (
+            f"coppa:{event_id}"
+        )
+
+
+        if key in notified:
+            continue
+
+
+        home_score = (
+            event.get(
+                "intHomeScore"
+            )
+        )
+
+        away_score = (
+            event.get(
+                "intAwayScore"
+            )
+        )
+
+
+        if (
+            home_score is None
+            or away_score is None
+        ):
+            continue
+
+
+        round_name = (
+            event.get("strRound")
+            or event.get("intRound")
+        )
+
+
+        detail = None
+
+
+        if round_name:
+
+            detail = (
+                f"📅 {round_name}"
+            )
+
+
+        message = format_result(
+            "🇮🇹 <b>COPPA ITALIA</b>",
+            event.get(
+                "strHomeTeam",
+                "",
+            ),
+            event.get(
+                "strAwayTeam",
+                "",
+            ),
+            home_score,
+            away_score,
+            detail,
+        )
+
+
+        send_telegram_message(
+            message
+        )
+
+
+        notified.add(
+            key
+        )
+
+
+        changed = True
+
+
+    return changed
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main() -> None:
+
+
+    # Test Serie A
+
+    if TEST_LAST_FINISHED:
+
+        test_last_serie_a()
+
+        return
+
+
+    # Test Europa League Juventus
+
+    if TEST_JUVE_EUROPA:
+
+        notify_juventus_europa(
+            set(),
+            force=True,
+        )
+
+        return
+
+
+    # Test Coppa Italia Juventus
+
+    if TEST_JUVE_COPPA:
+
+        notify_juventus_coppa(
+            set(),
+            force=True,
+        )
+
+        return
+
+
+    # Funzionamento automatico
+
+    notified = (
+        load_notified()
+    )
+
+
+    changed = False
+
+
+    if notify_serie_a(
+        notified
+    ):
+
+        changed = True
+
+
+    if notify_juventus_europa(
+        notified
+    ):
+
+        changed = True
+
+
+    if notify_juventus_coppa(
+        notified
+    ):
+
+        changed = True
+
+
     if changed:
-        save_notified(notified)
+
+        save_notified(
+            notified
+        )
 
 
 if __name__ == "__main__":
