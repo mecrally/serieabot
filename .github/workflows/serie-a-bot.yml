@@ -15,6 +15,12 @@ on:
         default: false
         type: boolean
 
+      test_last_match:
+        description: "Invia l'ultima partita Serie A finita"
+        required: false
+        default: false
+        type: boolean
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -45,10 +51,11 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_LAST_FINISHED: ${{ inputs.test_last_match }}
         run: python serie_a_bot.py
 
       - name: Salva le partite già notificate
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.test_telegram != true }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.test_telegram != true && inputs.test_last_match != true) }}
         run: |
           git config user.name "serie-a-bot"
           git config user.email "actions@users.noreply.github.com"
