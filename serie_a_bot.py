@@ -683,7 +683,7 @@ def format_match_message(
 
     lines.extend(
         [
-            "⚽️ <b>SERIE A • FINALE</b>",
+            "⚽️ <b>SERIE A</b>",
             "",
             (
                 f"{home_colors} "
