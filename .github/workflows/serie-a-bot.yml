@@ -2,10 +2,9 @@ name: Serie A Bot
 
 on:
   schedule:
-    - cron: "0 14 * * *"
-    - cron: "0 17 * * *"
-    - cron: "0 20 * * *"
-    - cron: "30 22 * * *"
+    # Ogni 15 minuti, dalle 10:00 alle 23:59 UTC.
+    # Copre ampiamente gli orari delle partite di Serie A.
+    - cron: "*/15 10-23 * * *"
 
   workflow_dispatch:
     inputs:
@@ -40,15 +39,15 @@ jobs:
       - name: Test Telegram
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_telegram == true }}
         env:
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -c 'from serie_a_bot import send_telegram_message; send_telegram_message("✅ Serie A Bot collegato correttamente!")'
+        run: |
+          python -c 'import os, requests; r=requests.post("https://api.telegram.org/bot"+os.environ["TELEGRAM_BOT_TOKEN"]+"/sendMessage", json={"chat_id":os.environ["TELEGRAM_CHAT_ID"],"text":"✅ Serie A Bot collegato correttamente!"}); r.raise_for_status()'
 
       - name: Esegui il bot
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.test_telegram != true }}
         env:
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          FOOTBALL_DATA_TOKEN: ${{ secrets.API_FOOTBALL_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TEST_LAST_FINISHED: ${{ inputs.test_last_match }}
