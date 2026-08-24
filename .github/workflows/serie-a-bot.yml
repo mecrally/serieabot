@@ -2,12 +2,12 @@ name: Serie A Bot
 
 on:
   schedule:
-    # Ogni 15 minuti, dalle 10:00 alle 23:59 UTC.
-    # Copre ampiamente gli orari delle partite di Serie A.
+    # Ogni 15 minuti dalle 10:00 alle 23:59 UTC
     - cron: "*/15 10-23 * * *"
 
   workflow_dispatch:
     inputs:
+
       test_telegram:
         description: "Invia un messaggio Telegram di prova"
         required: false
@@ -15,49 +15,95 @@ on:
         type: boolean
 
       test_last_match:
-        description: "Invia l'ultima partita Serie A finita"
+        description: "Test ultima partita Serie A"
         required: false
         default: false
         type: boolean
 
+      test_juve_europa:
+        description: "Test Juventus Europa League"
+        required: false
+        default: false
+        type: boolean
+
+      test_juve_coppa:
+        description: "Test Juventus Coppa Italia"
+        required: false
+        default: false
+        type: boolean
+
+
 jobs:
+
   run-bot:
+
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
+
     steps:
+
       - uses: actions/checkout@v4
+
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+
       - run: pip install -r requirements.txt
 
+
       - name: Test Telegram
+
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_telegram == true }}
+
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
         run: |
           python -c 'import os, requests; r=requests.post("https://api.telegram.org/bot"+os.environ["TELEGRAM_BOT_TOKEN"]+"/sendMessage", json={"chat_id":os.environ["TELEGRAM_CHAT_ID"],"text":"✅ Serie A Bot collegato correttamente!"}); r.raise_for_status()'
 
+
       - name: Esegui il bot
+
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.test_telegram != true }}
+
         env:
+
+          # football-data.org - Serie A
           FOOTBALL_DATA_TOKEN: ${{ secrets.API_FOOTBALL_KEY }}
+
+          # Footballdata.io - Europa League Juventus
+          FOOTBALLDATA_IO_KEY: ${{ secrets.FOOTBALLDATA_IO_KEY }}
+
+          # Telegram
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          # Test
           TEST_LAST_FINISHED: ${{ inputs.test_last_match }}
+          TEST_JUVE_EUROPA: ${{ inputs.test_juve_europa }}
+          TEST_JUVE_COPPA: ${{ inputs.test_juve_coppa }}
+
         run: python serie_a_bot.py
 
+
       - name: Salva le partite già notificate
-        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.test_telegram != true && inputs.test_last_match != true) }}
+
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.test_telegram != true && inputs.test_last_match != true && inputs.test_juve_europa != true && inputs.test_juve_coppa != true) }}
+
         run: |
+
           git config user.name "serie-a-bot"
+
           git config user.email "actions@users.noreply.github.com"
+
           git add notified.json
+
           git diff --staged --quiet || git commit -m "Aggiorna partite notificate"
+
           git push
