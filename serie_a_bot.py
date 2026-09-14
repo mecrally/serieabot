@@ -36,6 +36,10 @@ TEST_JUVE_COPPA = (
     os.getenv("TEST_JUVE_COPPA", "false").lower() == "true"
 )
 
+TEST_JUVE_TRASFERTA = (
+    os.getenv("TEST_JUVE_TRASFERTA", "false").lower() == "true"
+)
+
 NOTIFIED_FILE = "notified.json"
 
 
@@ -165,8 +169,29 @@ def get_team_info(name: str) -> tuple[str, str]:
     return name, "⚽"
 
 def is_juventus(name: str) -> bool:
+    """Riconosce la Juventus anche se il provider cambia leggermente il nome."""
+    normalized = normalize_name(name)
+    if normalized == "juventus" or normalized.startswith("juventus "):
+        return True
     short_name, _ = get_team_info(name)
     return short_name == "Juventus"
+
+
+JUVENTUS_FOOTBALL_DATA_ID = "109"
+
+
+def is_juventus_team(team) -> bool:
+    """Riconoscimento robusto per gli oggetti team di football-data.org."""
+    if isinstance(team, dict):
+        if str(team.get("id", "")) == JUVENTUS_FOOTBALL_DATA_ID:
+            return True
+        if str(team.get("tla", "")).upper() == "JUV":
+            return True
+        for key in ("name", "shortName"):
+            if is_juventus(str(team.get(key, ""))):
+                return True
+        return False
+    return is_juventus(str(team or ""))
 
 
 # ============================================================
@@ -279,26 +304,42 @@ def get_serie_a_matches(date_string=None) -> list:
     return response.json().get("matches", [])
 
 def notify_serie_a(notified: set) -> bool:
-    today = datetime.now(timezone.utc).date().isoformat()
+    # Usiamo la data italiana: è il calendario che interessa all'utente.
+    now_utc = datetime.now(timezone.utc)
+    today = (now_utc.astimezone(ITALY_TZ).date() if ITALY_TZ else now_utc.date()).isoformat()
     matches = get_serie_a_matches(today)
     changed = False
 
-    for match in matches:
-        home_name = match["homeTeam"]["name"]
-        away_name = match["awayTeam"]["name"]
+    print(f"[SERIE A] Data controllo: {today} - partite ricevute: {len(matches)}")
 
-        # Filtro: Solo Juventus
-        if not (is_juventus(home_name) or is_juventus(away_name)):
+    for match in matches:
+        home_team = match.get("homeTeam", {})
+        away_team = match.get("awayTeam", {})
+        home_name = home_team.get("name", "")
+        away_name = away_team.get("name", "")
+
+        juve_home = is_juventus_team(home_team)
+        juve_away = is_juventus_team(away_team)
+
+        print(
+            f"[SERIE A] {match.get('id')} | {home_name} - {away_name} | "
+            f"Juve casa={juve_home} trasferta={juve_away} | utc={match.get('utcDate')}"
+        )
+
+        # Stessa identica regola sia in casa sia in trasferta.
+        if not (juve_home or juve_away):
             continue
 
         match_id = str(match["id"])
         key = f"sa_pre:{match_id}"
 
         if key in notified:
+            print(f"[SERIE A] {key} già notificata")
             continue
 
         utc_date = match.get("utcDate")
         if not is_starting_soon(utc_date, max_minutes=45):
+            print(f"[SERIE A] {key} fuori dalla finestra prepartita di 45 minuti")
             continue
 
         detail = f"📅 Giornata {match['matchday']}" if match.get("matchday") else None
@@ -314,6 +355,7 @@ def notify_serie_a(notified: set) -> bool:
         send_telegram_message(message)
         notified.add(key)
         changed = True
+        print(f"[SERIE A] Notifica inviata: {key}")
 
     return changed
 
@@ -572,12 +614,103 @@ def notify_juventus_coppa(notified: set, force=False) -> bool:
 
 
 # ============================================================
+# TEST DETERMINISTICO: JUVENTUS IN TRASFERTA
+# ============================================================
+
+def test_juve_trasferta_all() -> None:
+    """
+    Test manuale indipendente dalle API e dal calendario reale.
+    Verifica che la Juventus venga riconosciuta come squadra OSPITE
+    in Serie A, Europa League e Coppa Italia e invia 3 messaggi Telegram.
+    Se uno dei controlli fallisce, il workflow termina con errore.
+    """
+    fake_time = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+
+    # 1) SERIE A: forma dati football-data.org
+    serie_a_match = {
+        "id": 990001,
+        "homeTeam": {"id": 471, "name": "US Sassuolo Calcio", "shortName": "Sassuolo", "tla": "SAS"},
+        "awayTeam": {"id": 109, "name": "Juventus Turin", "shortName": "Juventus", "tla": "JUV"},
+        "utcDate": fake_time,
+        "matchday": 99,
+    }
+    home_sa = serie_a_match["homeTeam"]
+    away_sa = serie_a_match["awayTeam"]
+    assert not is_juventus_team(home_sa), "Serie A: la squadra di casa è stata riconosciuta erroneamente come Juventus"
+    assert is_juventus_team(away_sa), "Serie A: Juventus ospite NON riconosciuta"
+    assert is_starting_soon(fake_time, max_minutes=45), "Serie A: test finestra 45 minuti fallito"
+    send_telegram_message(
+        format_prematch(
+            "🧪 <b>TEST TRASFERTA • SERIE A</b>",
+            home_sa["name"],
+            away_sa["name"],
+            fake_time,
+            "✅ Juventus riconosciuta come squadra ospite",
+        )
+    )
+
+    # 2) EUROPA LEAGUE: forma dati footballdata.io
+    europa_match = {
+        "id": 990002,
+        "home_team": {"team_name": "Olympique de Marseille"},
+        "away_team": {"team_name": "Juventus FC"},
+        "league": {"name": "UEFA Europa League"},
+        "starting_at": fake_time,
+        "round": "Test trasferta",
+    }
+    home_el = footballdata_team_name(europa_match["home_team"])
+    away_el = footballdata_team_name(europa_match["away_team"])
+    assert is_europa_league(europa_match), "Europa League: competizione non riconosciuta"
+    assert not is_juventus(home_el), "Europa League: la squadra di casa è stata riconosciuta erroneamente come Juventus"
+    assert is_juventus(away_el), "Europa League: Juventus ospite NON riconosciuta"
+    assert is_starting_soon(fake_time, max_minutes=45), "Europa League: test finestra 45 minuti fallito"
+    send_telegram_message(
+        format_prematch(
+            "🧪 <b>TEST TRASFERTA • EUROPA LEAGUE</b>",
+            home_el,
+            away_el,
+            fake_time,
+            "✅ Juventus riconosciuta come squadra ospite",
+            "Test locale, nessuna chiamata API partita",
+        )
+    )
+
+    # 3) COPPA ITALIA: forma dati TheSportsDB
+    coppa_event = {
+        "idEvent": "990003",
+        "idLeague": COPPA_ITALIA_ID,
+        "strHomeTeam": "Inter",
+        "strAwayTeam": "Juventus FC",
+        "strTimestamp": fake_time,
+        "strRound": "Test trasferta",
+    }
+    assert not is_juventus(coppa_event["strHomeTeam"]), "Coppa Italia: la squadra di casa è stata riconosciuta erroneamente come Juventus"
+    assert is_juventus_coppa_event(coppa_event), "Coppa Italia: Juventus ospite NON riconosciuta"
+    assert is_starting_soon(fake_time, max_minutes=45), "Coppa Italia: test finestra 45 minuti fallito"
+    send_telegram_message(
+        format_prematch(
+            "🧪 <b>TEST TRASFERTA • COPPA ITALIA</b>",
+            coppa_event["strHomeTeam"],
+            coppa_event["strAwayTeam"],
+            fake_time,
+            "✅ Juventus riconosciuta come squadra ospite",
+        )
+    )
+
+    print("[TEST TRASFERTA] OK: Serie A, Europa League e Coppa Italia")
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
 def main() -> None:
 
     # Test
+    if TEST_JUVE_TRASFERTA:
+        test_juve_trasferta_all()
+        return
+
     if TEST_LAST_FINISHED:
         test_last_serie_a()
         return
