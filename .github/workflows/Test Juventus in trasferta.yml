@@ -1,0 +1,27 @@
+name: Test Juventus in trasferta
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-juve-away:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: Test Juventus ospite - Serie A, Europa League, Coppa Italia
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_JUVE_TRASFERTA: "true"
+        run: python serie_a_bot.py
