@@ -457,10 +457,13 @@ def notify_juventus_europa(notified: set, force=False) -> bool:
 
     # Limitiamo le chiamate a martedì(1), mercoledì(2), giovedì(3)
     if not force and weekday not in {1, 2, 3}:
+        print("[EUROPA LEAGUE] Salto il controllo: oggi non è nella finestra mar/mer/gio")
         return False
 
     today = datetime.now(timezone.utc).date().isoformat()
     matches = get_juventus_europa_matches(today)
+
+    print(f"[EUROPA LEAGUE] Data controllo: {today} - partite Juventus trovate: {len(matches)}")
 
     if force and not matches:
         send_telegram_message(
@@ -471,25 +474,32 @@ def notify_juventus_europa(notified: set, force=False) -> bool:
         return False
 
     changed = False
+    any_in_window = False
 
     for match in matches:
         match_id = match.get("match_id") or match.get("id")
+        home = footballdata_team_name(match.get("home_team"))
+        away = footballdata_team_name(match.get("away_team"))
+
+        # In footballdata.io, la data può essere su starting_at, date, o utcDate
+        utc_date = match.get("starting_at") or match.get("date") or match.get("utc_date")
+        in_window = is_starting_soon(utc_date, max_minutes=45)
+
+        print(
+            f"[EUROPA LEAGUE] {match_id} | {home} - {away} | "
+            f"finestra 45min={in_window} | utc={utc_date}"
+        )
+
         if match_id is None:
             continue
 
         key = f"uel_pre:{match_id}"
         if key in notified:
             continue
-
-        home = footballdata_team_name(match.get("home_team"))
-        away = footballdata_team_name(match.get("away_team"))
-
-        # In footballdata.io, la data può essere su starting_at, date, o utcDate
-        utc_date = match.get("starting_at") or match.get("date") or match.get("utc_date")
-        
-        if not is_starting_soon(utc_date, max_minutes=45):
+        if not in_window:
             continue
 
+        any_in_window = True
         round_name = match.get("round") or match.get("game_week")
         detail = f"📅 {round_name}" if round_name else None
 
@@ -505,6 +515,21 @@ def notify_juventus_europa(notified: set, force=False) -> bool:
         send_telegram_message(message)
         notified.add(key)
         changed = True
+
+    # Test forzato: la partita è stata trovata ma è fuori dalla finestra dei 45 minuti
+    # (già iniziata, o troppo lontana) -> altrimenti il test restava muto e sembrava rotto.
+    if force and matches and not any_in_window:
+        lines = [
+            "🧪 <b>TEST • EUROPA LEAGUE JUVENTUS</b>",
+            "",
+            "✅ Footballdata.io collegato. Partita trovata, ma fuori dalla finestra prepartita (45 min):",
+        ]
+        for match in matches:
+            home = footballdata_team_name(match.get("home_team"))
+            away = footballdata_team_name(match.get("away_team"))
+            utc_date = match.get("starting_at") or match.get("date") or match.get("utc_date")
+            lines.append(f"• {home} - {away} (orario: {utc_date})")
+        send_telegram_message("\n".join(lines))
 
     return changed
 
