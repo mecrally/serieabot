@@ -425,23 +425,16 @@ def get_juventus_europa_matches(date_string: str) -> list:
     if not FOOTBALLDATA_IO_KEY:
         return []
 
-    # Cerchiamo nei 'fixtures' generici invece che nei risultati
+    # /fixtures da solo non esiste nell'API di footballdata.io: cadeva sempre
+    # sul fallback "/fixtures/results", che però contiene solo partite GIA' finite
+    # (per questo non trovava mai la partita di oggi non ancora iniziata).
+    # L'endpoint corretto per "le partite di oggi" e' /fixtures/today.
     response = requests.get(
-        f"{FDIO_BASE}/fixtures",
+        f"{FDIO_BASE}/fixtures/today",
         headers=FDIO_HEADERS,
         params={"date": date_string, "limit": 100},
         timeout=20,
     )
-    
-    # Se la rotta /fixtures normale non esiste, fallback sulla vecchia
-    if response.status_code != 200:
-        response = requests.get(
-            f"{FDIO_BASE}/fixtures/results",
-            headers=FDIO_HEADERS,
-            params={"date": date_string, "limit": 100},
-            timeout=20,
-        )
-
     response.raise_for_status()
     matches = []
 
