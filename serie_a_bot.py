@@ -42,6 +42,13 @@ TEST_JUVE_TRASFERTA = (
 
 NOTIFIED_FILE = "notified.json"
 
+# Finestra prepartita: quanto al massimo in anticipo può arrivare l'avviso.
+# L'affidabilità del TIMING non dipende più da questo margine, ma dal fatto
+# di far scattare il workflow con un trigger esterno affidabile (vedi sotto)
+# invece che con lo `schedule:` nativo di GitHub, che salta spesso per ore.
+NOTIFY_WINDOW_BEFORE = int(os.getenv("NOTIFY_WINDOW_BEFORE_MIN", "60"))  # minuti prima del fischio d'inizio
+NOTIFY_WINDOW_AFTER = int(os.getenv("NOTIFY_WINDOW_AFTER_MIN", "10"))   # piccola tolleranza dopo
+
 
 # ============================================================
 # API
@@ -198,8 +205,14 @@ def is_juventus_team(team) -> bool:
 # FUNZIONI TEMPO E FORMATTAZIONE (MODIFICATE)
 # ============================================================
 
-def is_starting_soon(utc_date_string: str, max_minutes: int = 45) -> bool:
-    """Controlla se la partita inizia nei prossimi 'max_minutes' minuti."""
+def is_starting_soon(utc_date_string: str, max_minutes: int = 45, grace_minutes: int = 0) -> bool:
+    """Controlla se la partita inizia entro 'max_minutes' minuti da adesso.
+
+    'grace_minutes' concede una tolleranza anche DOPO il calcio d'inizio:
+    serve perché le run schedulate di GitHub Actions non sono affidabili
+    (possono saltare per ore), quindi la prima run utile potrebbe capitare
+    a partita già iniziata da pochi minuti.
+    """
     if not utc_date_string:
         return False
     try:
@@ -207,7 +220,7 @@ def is_starting_soon(utc_date_string: str, max_minutes: int = 45) -> bool:
         match_time = datetime.fromisoformat(clean_date)
         now = datetime.now(timezone.utc)
         delta = match_time - now
-        return timedelta(minutes=0) <= delta <= timedelta(minutes=max_minutes)
+        return timedelta(minutes=-grace_minutes) <= delta <= timedelta(minutes=max_minutes)
     except Exception:
         return False
 
@@ -338,8 +351,8 @@ def notify_serie_a(notified: set) -> bool:
             continue
 
         utc_date = match.get("utcDate")
-        if not is_starting_soon(utc_date, max_minutes=45):
-            print(f"[SERIE A] {key} fuori dalla finestra prepartita di 45 minuti")
+        if not is_starting_soon(utc_date, max_minutes=NOTIFY_WINDOW_BEFORE, grace_minutes=NOTIFY_WINDOW_AFTER):
+            print(f"[SERIE A] {key} fuori dalla finestra prepartita")
             continue
 
         detail = f"📅 Giornata {match['matchday']}" if match.get("matchday") else None
@@ -483,7 +496,7 @@ def notify_juventus_europa(notified: set, force=False) -> bool:
 
         # In footballdata.io, la data può essere su starting_at, date, o utcDate
         utc_date = match.get("starting_at") or match.get("date") or match.get("utc_date")
-        in_window = is_starting_soon(utc_date, max_minutes=45)
+        in_window = is_starting_soon(utc_date, max_minutes=NOTIFY_WINDOW_BEFORE, grace_minutes=NOTIFY_WINDOW_AFTER)
 
         print(
             f"[EUROPA LEAGUE] {match_id} | {home} - {away} | "
@@ -610,7 +623,7 @@ def notify_juventus_coppa(notified: set, force=False) -> bool:
         # TheSportsDB salva la data in UTC in strTimestamp
         utc_date = event.get("strTimestamp")
         
-        if not is_starting_soon(utc_date, max_minutes=45):
+        if not is_starting_soon(utc_date, max_minutes=NOTIFY_WINDOW_BEFORE, grace_minutes=NOTIFY_WINDOW_AFTER):
             continue
 
         round_name = event.get("strRound") or event.get("intRound")
