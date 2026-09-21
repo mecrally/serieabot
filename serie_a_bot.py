@@ -46,7 +46,7 @@ NOTIFIED_FILE = "notified.json"
 # L'affidabilità del TIMING non dipende più da questo margine, ma dal fatto
 # di far scattare il workflow con un trigger esterno affidabile (vedi sotto)
 # invece che con lo `schedule:` nativo di GitHub, che salta spesso per ore.
-NOTIFY_WINDOW_BEFORE = int(os.getenv("NOTIFY_WINDOW_BEFORE_MIN", "60"))  # minuti prima del fischio d'inizio
+NOTIFY_WINDOW_BEFORE = int(os.getenv("NOTIFY_WINDOW_BEFORE_MIN", "30"))  # minuti prima del fischio d'inizio
 NOTIFY_WINDOW_AFTER = int(os.getenv("NOTIFY_WINDOW_AFTER_MIN", "10"))   # piccola tolleranza dopo
 
 
